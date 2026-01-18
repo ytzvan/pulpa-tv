@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulpa TV — Slideshow</title>
+
+    <style>
+      /* 1920x1080 stage that also scales to fit the viewport */
+      html, body {
+        height: 100%;
+        margin: 0;
+        background: #000;
+      }
+
+      .stage {
+        width: 1920px;
+        height: 1080px;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(var(--scale, 1));
+        transform-origin: center;
+        overflow: hidden;
+        background: #000;
+      }
+
+      .slide {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0;
+        transition: opacity 600ms ease;
+      }
+
+      .slide.is-active {
+        opacity: 1;
+      }
+
+      .hint {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        right: 20px;
+        color: rgba(255, 255, 255, 0.75);
+        font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        pointer-events: none;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="stage" id="stage">
+      <img class="slide is-active" id="slideA" alt="Slideshow image A" />
+      <img class="slide" id="slideB" alt="Slideshow image B" />
+      <div class="hint" id="hint"></div>
+    </div>
+
+    <script>
+      // -----------------------------
+      // CONFIG
+      // -----------------------------
+      // Coloca aquí tus imágenes (rutas relativas o URLs). Ej:
+      // const IMAGE_URLS = [
+      //   './images/slide-1.jpg',
+      //   './images/slide-2.jpg',
+      //   './images/slide-3.jpg',
+      // ];
+      const IMAGE_URLS = [
+        'img2.jpg',
+        'img.png'
+      ];
+
+      const INTERVAL_MS = 10000;
+
+      // -----------------------------
+      // STAGE SCALE (keeps 1920x1080 proportion)
+      // -----------------------------
+      (function setupScale() {
+        const stage = document.getElementById('stage');
+
+        function applyScale() {
+          const scaleX = window.innerWidth / 1920;
+          const scaleY = window.innerHeight / 1080;
+          const scale = Math.min(scaleX, scaleY);
+          stage.style.setProperty('--scale', String(scale));
+        }
+
+        window.addEventListener('resize', applyScale, { passive: true });
+        applyScale();
+      })();
+
+      // -----------------------------
+      // "Synchronous" loading behavior:
+      // - We DO NOT start the slideshow until ALL images are loaded.
+      // - We preload sequentially (one after another), so we only advance
+      //   after each one has fully loaded.
+      // -----------------------------
+      function preloadImagesSequential(urls) {
+        const loaded = [];
+
+        return urls.reduce((promiseChain, url) => {
+          return promiseChain.then(() => {
+            return new Promise((resolve, reject) => {
+              const img = new Image();
+              img.decoding = 'sync';
+              img.loading = 'eager';
+              img.onload = () => {
+                loaded.push(url);
+                resolve();
+              };
+              img.onerror = () => reject(new Error('No se pudo cargar: ' + url));
+              img.src = url;
+            });
+          });
+        }, Promise.resolve()).then(() => loaded);
+      }
+
+      function startSlideshow(urls) {
+        const slideA = document.getElementById('slideA');
+        const slideB = document.getElementById('slideB');
+        const hint = document.getElementById('hint');
+
+        if (!urls.length) {
+          hint.textContent = 'No hay imágenes en IMAGE_URLS.';
+          return;
+        }
+
+        // Initialize
+        let currentIndex = 0;
+        let showingA = true;
+
+        slideA.src = urls[0];
+        slideA.classList.add('is-active');
+        slideB.classList.remove('is-active');
+
+        hint.textContent = '';
+
+        function next() {
+          currentIndex = (currentIndex + 1) % urls.length;
+
+          const incoming = showingA ? slideB : slideA;
+          const outgoing = showingA ? slideA : slideB;
+
+          incoming.src = urls[currentIndex];
+
+          // Swap with a tiny delay so the browser registers the opacity transition
+          requestAnimationFrame(() => {
+            incoming.classList.add('is-active');
+            outgoing.classList.remove('is-active');
+            showingA = !showingA;
+          });
+        }
+
+        setInterval(next, INTERVAL_MS);
+      }
+
+      // This script runs synchronously as the HTML is parsed (it’s inline and at the end of body).
+      // We only *begin* the slideshow after all images finish loading.
+      (function boot() {
+        const hint = document.getElementById('hint');
+
+        if (!Array.isArray(IMAGE_URLS) || IMAGE_URLS.length === 0) {
+          hint.textContent = 'Edita IMAGE_URLS para apuntar a tus imágenes.';
+          return;
+        }
+
+        hint.textContent = 'Cargando imágenes…';
+
+        preloadImagesSequential(IMAGE_URLS)
+          .then((loadedUrls) => {
+            startSlideshow(loadedUrls);
+          })
+          .catch((err) => {
+            hint.textContent = String(err && err.message ? err.message : err);
+            // Optional: log for debugging
+            console.error(err);
+          });
+      })();
+    </script>
+  </body>
+</html>
