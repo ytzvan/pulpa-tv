@@ -63,18 +63,18 @@
       // -----------------------------
       // CONFIG
       // -----------------------------
-      // Coloca aquí tus imágenes (rutas relativas o URLs). Ej:
-      // const IMAGE_URLS = [
-      //   './images/slide-1.jpg',
-      //   './images/slide-2.jpg',
-      //   './images/slide-3.jpg',
-      // ];
-      const IMAGE_URLS = [
-        'img2.jpg',
-        'img.png'
+      // The slideshow can be configured in two ways:
+      // 1) Default here (SLIDES_FALLBACK)
+      // 2) A generated HTML can set `window.SLIDES = [...]` before this script runs
+      //    where each item is: { src: string, durationMs: number }
+      const SLIDES_FALLBACK = [
+      //  { src: 'img2.jpg', durationMs: 10000 },
+        { src: 'img.png', durationMs: 10000 }
       ];
 
-      const INTERVAL_MS = 10000;
+      const SLIDES = Array.isArray(window.SLIDES) && window.SLIDES.length
+        ? window.SLIDES
+        : SLIDES_FALLBACK;
 
       // -----------------------------
       // STAGE SCALE (keeps 1920x1080 proportion)
@@ -99,63 +99,90 @@
       // - We preload sequentially (one after another), so we only advance
       //   after each one has fully loaded.
       // -----------------------------
-      function preloadImagesSequential(urls) {
+      function preloadSlidesSequential(slides) {
         const loaded = [];
 
-        return urls.reduce((promiseChain, url) => {
+        return slides.reduce((promiseChain, slide) => {
           return promiseChain.then(() => {
             return new Promise((resolve, reject) => {
               const img = new Image();
               img.decoding = 'sync';
               img.loading = 'eager';
               img.onload = () => {
-                loaded.push(url);
+                loaded.push(slide);
                 resolve();
               };
-              img.onerror = () => reject(new Error('No se pudo cargar: ' + url));
-              img.src = url;
+              img.onerror = () => reject(new Error('No se pudo cargar: ' + slide.src));
+              img.src = slide.src;
             });
           });
         }, Promise.resolve()).then(() => loaded);
       }
 
-      function startSlideshow(urls) {
+      function startSlideshow(slides) {
         const slideA = document.getElementById('slideA');
         const slideB = document.getElementById('slideB');
         const hint = document.getElementById('hint');
 
-        if (!urls.length) {
-          hint.textContent = 'No hay imágenes en IMAGE_URLS.';
+        if (!slides.length) {
+          hint.textContent = 'No hay slides configurados.';
+          return;
+        }
+
+        // Normalize durations and src
+        const normalized = slides
+          .filter(s => s && typeof s.src === 'string' && s.src.trim().length)
+          .map(s => ({
+            src: s.src,
+            durationMs: Number.isFinite(Number(s.durationMs)) && Number(s.durationMs) > 0
+              ? Number(s.durationMs)
+              : 5000
+          }));
+
+        if (!normalized.length) {
+          hint.textContent = 'No hay slides válidos (src/durationMs).';
           return;
         }
 
         // Initialize
         let currentIndex = 0;
         let showingA = true;
+        let timerId = null;
 
-        slideA.src = urls[0];
+        slideA.src = normalized[0].src;
         slideA.classList.add('is-active');
         slideB.classList.remove('is-active');
-
         hint.textContent = '';
 
-        function next() {
-          currentIndex = (currentIndex + 1) % urls.length;
+        function scheduleNext() {
+          const current = normalized[currentIndex];
+          const wait = current.durationMs;
 
-          const incoming = showingA ? slideB : slideA;
-          const outgoing = showingA ? slideA : slideB;
+          timerId = window.setTimeout(() => {
+            // advance index
+            currentIndex = (currentIndex + 1) % normalized.length;
+            const nextSlide = normalized[currentIndex];
 
-          incoming.src = urls[currentIndex];
+            const incoming = showingA ? slideB : slideA;
+            const outgoing = showingA ? slideA : slideB;
 
-          // Swap with a tiny delay so the browser registers the opacity transition
-          requestAnimationFrame(() => {
-            incoming.classList.add('is-active');
-            outgoing.classList.remove('is-active');
-            showingA = !showingA;
-          });
+            incoming.src = nextSlide.src;
+
+            requestAnimationFrame(() => {
+              incoming.classList.add('is-active');
+              outgoing.classList.remove('is-active');
+              showingA = !showingA;
+              scheduleNext();
+            });
+          }, wait);
         }
 
-        setInterval(next, INTERVAL_MS);
+        // Safety: clear on unload
+        window.addEventListener('beforeunload', () => {
+          if (timerId) window.clearTimeout(timerId);
+        });
+
+        scheduleNext();
       }
 
       // This script runs synchronously as the HTML is parsed (it’s inline and at the end of body).
@@ -163,16 +190,16 @@
       (function boot() {
         const hint = document.getElementById('hint');
 
-        if (!Array.isArray(IMAGE_URLS) || IMAGE_URLS.length === 0) {
-          hint.textContent = 'Edita IMAGE_URLS para apuntar a tus imágenes.';
+        if (!Array.isArray(SLIDES) || SLIDES.length === 0) {
+          hint.textContent = 'Configura SLIDES (o SLIDES_FALLBACK) para apuntar a tus imágenes.';
           return;
         }
 
         hint.textContent = 'Cargando imágenes…';
 
-        preloadImagesSequential(IMAGE_URLS)
-          .then((loadedUrls) => {
-            startSlideshow(loadedUrls);
+        preloadSlidesSequential(SLIDES)
+          .then((loadedSlides) => {
+            startSlideshow(loadedSlides);
           })
           .catch((err) => {
             hint.textContent = String(err && err.message ? err.message : err);
