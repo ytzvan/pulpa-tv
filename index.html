@@ -63,9 +63,9 @@
       // CONFIG
       // -----------------------------
       const SLIDES_FALLBACK = [
-        { src: 'assets/img/img.png', durationMs: 12000 },
-        { src: 'assets/img/img1.png', durationMs: 6000 },
-        { src: 'assets/img/img3.gif', durationMs: 6000 }
+        { src: '/assets/img/img.png', durationMs: 12000 },
+        { src: '/assets/img/img1.png', durationMs: 6000 },
+        { src: '/assets/img/img3.gif', durationMs: 6000 }
       ];
 
       const SLIDES = Array.isArray(window.SLIDES) && window.SLIDES.length
@@ -89,19 +89,24 @@
       // -----------------------------
       // ASYNC PRELOAD
       // -----------------------------
-      async function preloadSlidesAsync(slides) {
-        const tasks = slides.map((slide) => {
-          return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.decoding = 'async';
-            img.loading = 'eager';
-            img.onload = () => resolve(slide);
-            img.onerror = () => reject(new Error('No se pudo cargar: ' + slide.src));
-            img.src = slide.src;
-          });
-        });
+      function preloadSlidesSequential(slides) {
+        const loaded = [];
 
-        return await Promise.all(tasks);
+        return slides.reduce((chain, slide) => {
+          return chain.then(() => {
+            return new Promise((resolve, reject) => {
+              const img = new Image();
+              img.decoding = 'sync';
+              img.loading = 'eager';
+              img.onload = () => {
+                loaded.push(slide);
+                resolve();
+              };
+              img.onerror = () => reject(new Error('No se pudo cargar: ' + slide.src));
+              img.src = slide.src;
+            });
+          });
+        }, Promise.resolve()).then(() => loaded);
       }
 
       // -----------------------------
@@ -177,7 +182,7 @@
         hint.textContent = 'Cargando imágenes…';
 
         try {
-          const loadedSlides = await preloadSlidesAsync(SLIDES);
+          const loadedSlides = await preloadSlidesSequential(SLIDES);
           startSlideshow(loadedSlides);
         } catch (err) {
           hint.textContent = String(err && err.message ? err.message : err);
