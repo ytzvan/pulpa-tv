@@ -3,63 +3,187 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Pulpa TV — Video</title>
+    <title>Pulpa TV — Slideshow</title>
 
     <style>
       html, body {
-        width: 100%;
         height: 100%;
         margin: 0;
         background: #000;
-        overflow: hidden;
       }
 
-      video {
-        width: 100vw;
-        height: 100vh;
-        object-fit: cover; /* fill entire screen without distortion */
-        display: block;
+      .stage {
+        width: 1920px;
+        height: 1080px;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(var(--scale, 1));
+        transform-origin: center;
+        overflow: hidden;
         background: #000;
-        pointer-events: none; /* prevent clicks/taps from pausing */
-        user-select: none;
+      }
+
+      .slide {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0;
+        transition: opacity 600ms ease;
+      }
+
+      .slide.is-active {
+        opacity: 1;
+      }
+
+      .hint {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        right: 20px;
+        color: rgba(255, 255, 255, 0.75);
+        font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        pointer-events: none;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.6);
       }
     </style>
   </head>
 
   <body>
-    <video id="bgVideo" autoplay muted playsinline preload="auto">
-      <source src="assets/img/index.mp4" type="video/mp4" />
-      Tu navegador no soporta video HTML5.
-    </video>
+    <div class="stage" id="stage">
+      <img class="slide is-active" id="slideA" alt="Slideshow image A" />
+      <img class="slide" id="slideB" alt="Slideshow image B" />
+      <div class="hint" id="hint"></div>
+    </div>
+
     <script>
-      const video = document.getElementById('bgVideo');
+      // -----------------------------
+      // CONFIG
+      // -----------------------------
+      const SLIDES_FALLBACK = [
+        { src: 'assets/img/img1.png', durationMs: 12000 },
+        { src: 'assets/img/img1.png', durationMs: 6000 },
+        { src: 'assets/img/img3.gif', durationMs: 6000 }
+      ];
 
-      // Disable any native controls and PiP
-      video.controls = false;
-      video.disablePictureInPicture = true;
+      const SLIDES = Array.isArray(window.SLIDES) && window.SLIDES.length
+        ? window.SLIDES
+        : SLIDES_FALLBACK;
 
-      // If someone tries to pause it (keyboard/OS), immediately resume
-      video.addEventListener('pause', () => {
-        video.play().catch(() => {});
-      });
-
-      // Force infinite loop even if the native loop attribute fails
-      video.addEventListener('ended', () => {
-        video.currentTime = 0;
-        video.play().catch(() => {});
-      });
-
-      // Resume playback if the tab regains focus
-      document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && video.paused) {
-          video.play().catch(() => {});
+      // -----------------------------
+      // SCALE TO VIEWPORT
+      // -----------------------------
+      (function setupScale() {
+        const stage = document.getElementById('stage');
+        function applyScale() {
+          const scaleX = window.innerWidth / 1920;
+          const scaleY = window.innerHeight / 1080;
+          stage.style.setProperty('--scale', String(Math.min(scaleX, scaleY)));
         }
-      });
+        window.addEventListener('resize', applyScale, { passive: true });
+        applyScale();
+      })();
 
-      // Extra safety on load
-      window.addEventListener('load', () => {
-        video.play().catch(() => {});
-      });
+      // -----------------------------
+      // ASYNC PRELOAD
+      // -----------------------------
+      async function preloadSlidesAsync(slides) {
+        const tasks = slides.map((slide) => {
+          return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.decoding = 'async';
+            img.loading = 'eager';
+            img.onload = () => resolve(slide);
+            img.onerror = () => reject(new Error('No se pudo cargar: ' + slide.src));
+            img.src = slide.src;
+          });
+        });
+
+        return await Promise.all(tasks);
+      }
+
+      // -----------------------------
+      // SLIDESHOW
+      // -----------------------------
+      function startSlideshow(slides) {
+        const slideA = document.getElementById('slideA');
+        const slideB = document.getElementById('slideB');
+        const hint = document.getElementById('hint');
+
+        const normalized = slides
+          .filter(s => s && typeof s.src === 'string' && s.src.trim().length)
+          .map(s => ({
+            src: s.src,
+            durationMs: Number.isFinite(Number(s.durationMs)) && Number(s.durationMs) > 0
+              ? Number(s.durationMs)
+              : 5000
+          }));
+
+        if (!normalized.length) {
+          hint.textContent = 'No hay slides válidos.';
+          return;
+        }
+
+        let currentIndex = 0;
+        let showingA = true;
+        let timerId = null;
+
+        slideA.src = normalized[0].src;
+        slideA.classList.add('is-active');
+        slideB.classList.remove('is-active');
+        hint.textContent = '';
+
+        function scheduleNext() {
+          const wait = normalized[currentIndex].durationMs;
+
+          timerId = window.setTimeout(() => {
+            currentIndex = (currentIndex + 1) % normalized.length;
+            const nextSlide = normalized[currentIndex];
+
+            const incoming = showingA ? slideB : slideA;
+            const outgoing = showingA ? slideA : slideB;
+
+            incoming.src = nextSlide.src;
+
+            requestAnimationFrame(() => {
+              incoming.classList.add('is-active');
+              outgoing.classList.remove('is-active');
+              showingA = !showingA;
+              scheduleNext();
+            });
+          }, wait);
+        }
+
+        window.addEventListener('beforeunload', () => {
+          if (timerId) window.clearTimeout(timerId);
+        });
+
+        scheduleNext();
+      }
+
+      // -----------------------------
+      // BOOT
+      // -----------------------------
+      (async function boot() {
+        const hint = document.getElementById('hint');
+
+        if (!Array.isArray(SLIDES) || SLIDES.length === 0) {
+          hint.textContent = 'Configura SLIDES para apuntar a tus imágenes.';
+          return;
+        }
+
+        hint.textContent = 'Cargando imágenes…';
+
+        try {
+          const loadedSlides = await preloadSlidesAsync(SLIDES);
+          startSlideshow(loadedSlides);
+        } catch (err) {
+          hint.textContent = String(err && err.message ? err.message : err);
+          console.error(err);
+        }
+      })();
     </script>
   </body>
 </html>
