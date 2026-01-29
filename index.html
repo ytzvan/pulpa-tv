@@ -30,12 +30,13 @@
         width: 100%;
         height: 100%;
         object-fit: cover;
-        opacity: 0;
-        transition: opacity 600ms ease;
+        transform: translateX(100%);
+        transition: transform 700ms ease;
+        will-change: transform;
       }
 
       .slide.is-active {
-        opacity: 1;
+        transform: translateX(0%);
       }
 
       .hint {
@@ -136,8 +137,11 @@
         let timerId = null;
 
         slideA.src = normalized[0].src;
+        slideA.style.transform = 'translateX(0%)';
         slideA.classList.add('is-active');
+
         slideB.classList.remove('is-active');
+        slideB.style.transform = 'translateX(100%)';
         hint.textContent = '';
 
         function scheduleNext() {
@@ -150,11 +154,19 @@
             const incoming = showingA ? slideB : slideA;
             const outgoing = showingA ? slideA : slideB;
 
+            // prepare incoming slide offscreen to the right
+            incoming.classList.remove('is-active');
+            incoming.style.transform = 'translateX(100%)';
             incoming.src = nextSlide.src;
 
             requestAnimationFrame(() => {
+              // slide incoming from right -> center
               incoming.classList.add('is-active');
+
+              // push outgoing to the left
+              outgoing.style.transform = 'translateX(-100%)';
               outgoing.classList.remove('is-active');
+
               showingA = !showingA;
               scheduleNext();
             });
