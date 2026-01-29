@@ -20,14 +20,46 @@
         object-fit: cover; /* fill entire screen without distortion */
         display: block;
         background: #000;
+        pointer-events: none; /* prevent clicks/taps from pausing */
+        user-select: none;
       }
     </style>
   </head>
 
   <body>
-    <video autoplay loop muted playsinline preload="auto">
+    <video id="bgVideo" autoplay muted playsinline preload="auto">
       <source src="assets/img/index.mp4" type="video/mp4" />
       Tu navegador no soporta video HTML5.
     </video>
+    <script>
+      const video = document.getElementById('bgVideo');
+
+      // Disable any native controls and PiP
+      video.controls = false;
+      video.disablePictureInPicture = true;
+
+      // If someone tries to pause it (keyboard/OS), immediately resume
+      video.addEventListener('pause', () => {
+        video.play().catch(() => {});
+      });
+
+      // Force infinite loop even if the native loop attribute fails
+      video.addEventListener('ended', () => {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+      });
+
+      // Resume playback if the tab regains focus
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && video.paused) {
+          video.play().catch(() => {});
+        }
+      });
+
+      // Extra safety on load
+      window.addEventListener('load', () => {
+        video.play().catch(() => {});
+      });
+    </script>
   </body>
 </html>
