@@ -1,0 +1,605 @@
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulpa TV — Admin</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: #0b0b0b;
+        color: #fff;
+      }
+
+      .wrap {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .card {
+        background: #141414;
+        border: 1px solid #262626;
+        border-radius: 12px;
+        padding: 16px;
+        margin: 16px 0;
+      }
+
+      .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      input[type="file"] {
+        color: #fff;
+      }
+
+      input[type="number"] {
+        width: 160px;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #333;
+        background: #0f0f0f;
+        color: #fff;
+      }
+
+      button {
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 1px solid #333;
+        background: #1f1f1f;
+        color: #fff;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #2a2a2a;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .item {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid #2b2b2b;
+        background: #111;
+      }
+
+      .thumb {
+        width: 120px;
+        height: 68px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid #2b2b2b;
+        background: #000;
+      }
+
+      .muted {
+        color: rgba(255, 255, 255, 0.65);
+        font-size: 13px;
+      }
+
+      .danger {
+        color: #ffb3b3;
+      }
+
+      code {
+        background: #0f0f0f;
+        padding: 2px 6px;
+        border-radius: 6px;
+      }
+
+      .preview {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        border-radius: 12px;
+        border: 1px solid #2b2b2b;
+        overflow: hidden;
+        background: #000;
+        position: relative;
+      }
+
+      .preview img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0;
+        transition: opacity 400ms ease;
+      }
+
+      .preview img.is-active {
+        opacity: 1;
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid #333;
+        background: #101010;
+        font-size: 12px;
+        color: rgba(255,255,255,0.85);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <h1>Pulpa TV — Admin</h1>
+      <p class="muted">
+        Sube hasta <strong>5</strong> imágenes, define duración por imagen y genera el <code>index.html</code> del slideshow.
+      </p>
+
+      <div class="card">
+        <div class="row">
+          <input id="fileInput" type="file" accept="image/*" multiple />
+          <button id="clearBtn" type="button">Limpiar</button>
+        </div>
+        <p class="muted">
+          El botón <strong>Descargar imágenes</strong> bajará los archivos con nombres “seguros”. Luego los pones en <code>/assets</code>.
+        </p>
+        <p id="error" class="danger"></p>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between;">
+          <h2 style="margin:0;">Imágenes</h2>
+          <span class="badge" id="countBadge">0 / 5</span>
+        </div>
+        <div id="list" class="list" style="margin-top: 12px;"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between;">
+          <h2 style="margin:0;">Preview</h2>
+          <span class="muted">(para revisar antes de generar)</span>
+        </div>
+        <div class="preview" id="preview" aria-label="Preview del slideshow">
+          <img id="pA" class="is-active" alt="Preview A" />
+          <img id="pB" alt="Preview B" />
+        </div>
+        <p class="muted" id="previewHint" style="margin-top: 8px;"></p>
+      </div>
+
+      <div class="card">
+        <h2>Generar sitio</h2>
+        <div class="row">
+          <button id="genBtn" type="button">Generar sitio</button>
+          <button id="dlAllBtn" type="button">Descargar imágenes</button>
+        </div>
+        <p class="muted">
+          Se descargará un <code>index.html</code> que espera las imágenes en <code>./assets/</code> y un <code>README.txt</code> con pasos.
+        </p>
+      </div>
+    </div>
+
+    <script>
+      const MAX_FILES = 5;
+
+      /** @type {{ file: File, name: string, objectUrl: string, durationMs: number }[]} */
+      let items = [];
+
+      const fileInput = document.getElementById('fileInput');
+      const list = document.getElementById('list');
+      const errorEl = document.getElementById('error');
+      const clearBtn = document.getElementById('clearBtn');
+      const genBtn = document.getElementById('genBtn');
+      const dlAllBtn = document.getElementById('dlAllBtn');
+      const countBadge = document.getElementById('countBadge');
+
+      // Preview elements
+      const pA = document.getElementById('pA');
+      const pB = document.getElementById('pB');
+      const previewHint = document.getElementById('previewHint');
+      let previewTimerId = null;
+      let previewIndex = 0;
+      let previewShowingA = true;
+
+      function setError(msg) {
+        errorEl.textContent = msg || '';
+      }
+
+      function sanitizeFilename(name) {
+        return name
+          .trim()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-zA-Z0-9._-]/g, '');
+      }
+
+      function updateCountBadge() {
+        countBadge.textContent = `${items.length} / ${MAX_FILES}`;
+      }
+
+      function render() {
+        list.innerHTML = '';
+        updateCountBadge();
+
+        if (!items.length) {
+          list.innerHTML = '<div class="muted">No hay imágenes cargadas.</div>';
+          genBtn.disabled = true;
+          dlAllBtn.disabled = true;
+          stopPreview();
+          previewHint.textContent = 'Carga imágenes para ver el preview.';
+          pA.removeAttribute('src');
+          pB.removeAttribute('src');
+          return;
+        }
+
+        genBtn.disabled = false;
+        dlAllBtn.disabled = false;
+
+        items.forEach((it, idx) => {
+          const row = document.createElement('div');
+          row.className = 'item';
+
+          const img = document.createElement('img');
+          img.className = 'thumb';
+          img.src = it.objectUrl;
+          img.alt = it.name;
+
+          const meta = document.createElement('div');
+          meta.style.flex = '1';
+
+          const title = document.createElement('div');
+          title.innerHTML = '<strong>' + it.name + '</strong>' +
+            '<div class="muted">Ruta esperada: <code>./assets/' + it.name + '</code></div>';
+
+          const controls = document.createElement('div');
+          controls.className = 'row';
+          controls.style.marginTop = '10px';
+
+          const dur = document.createElement('input');
+          dur.type = 'number';
+          dur.min = '1';
+          dur.step = '1';
+          dur.value = String(Math.round(it.durationMs / 1000));
+          dur.title = 'Duración (segundos)';
+
+          dur.addEventListener('input', () => {
+            const seconds = Number(dur.value);
+            it.durationMs = Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1000) : 5000;
+            // Restart preview to reflect new timing
+            restartPreview();
+          });
+
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.textContent = 'Quitar';
+          remove.addEventListener('click', () => {
+            URL.revokeObjectURL(it.objectUrl);
+            items.splice(idx, 1);
+            render();
+            restartPreview();
+          });
+
+          controls.appendChild(document.createTextNode('Duración (s):'));
+          controls.appendChild(dur);
+          controls.appendChild(remove);
+
+          meta.appendChild(title);
+          meta.appendChild(controls);
+
+          row.appendChild(img);
+          row.appendChild(meta);
+
+          list.appendChild(row);
+        });
+
+        restartPreview();
+      }
+
+      function downloadTextFile(filename, content, mime = 'text/html') {
+        const blob = new Blob([content], { type: mime + ';charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function downloadFile(file, filenameOverride) {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filenameOverride || file.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function generateIndexHtml(slides) {
+        const slidesJson = JSON.stringify(slides, null, 2);
+
+        return `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulpa TV — Slideshow</title>
+
+    <style>
+      html, body { height: 100%; margin: 0; background: #000; }
+      .stage {
+        width: 1920px; height: 1080px;
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%) scale(var(--scale, 1));
+        transform-origin: center;
+        overflow: hidden;
+        background: #000;
+      }
+      .slide {
+        position: absolute; inset: 0;
+        width: 100%; height: 100%;
+        object-fit: cover;
+        opacity: 0;
+        transition: opacity 600ms ease;
+      }
+      .slide.is-active { opacity: 1; }
+      .hint {
+        position: absolute; bottom: 20px; left: 20px; right: 20px;
+        color: rgba(255, 255, 255, 0.75);
+        font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        pointer-events: none;
+        text-shadow: 0  1px 2px rgba(0,0,0,0.6);
+      }
+    </style>
+
+    <script>
+      // Generated by /admin
+      window.SLIDES = ${slidesJson};
+    </script>
+  </head>
+
+  <body>
+    <div class="stage" id="stage">
+      <img class="slide is-active" id="slideA" alt="Slideshow image A" />
+      <img class="slide" id="slideB" alt="Slideshow image B" />
+      <div class="hint" id="hint"></div>
+    </div>
+
+    <script>
+      (function setupScale() {
+        const stage = document.getElementById('stage');
+        function applyScale() {
+          const scaleX = window.innerWidth / 1920;
+          const scaleY = window.innerHeight / 1080;
+          stage.style.setProperty('--scale', String(Math.min(scaleX, scaleY)));
+        }
+        window.addEventListener('resize', applyScale, { passive: true });
+        applyScale();
+      })();
+
+      function preloadSlidesSequential(slides) {
+        const loaded = [];
+        return slides.reduce((p, slide) => p.then(() => new Promise((resolve, reject) => {
+          const img = new Image();
+          img.decoding = 'sync';
+          img.loading = 'eager';
+          img.onload = () => { loaded.push(slide); resolve(); };
+          img.onerror = () => reject(new Error('No se pudo cargar: ' + slide.src));
+          img.src = slide.src;
+        })), Promise.resolve()).then(() => loaded);
+      }
+
+      function startSlideshow(slides) {
+        const slideA = document.getElementById('slideA');
+        const slideB = document.getElementById('slideB');
+        const hint = document.getElementById('hint');
+
+        const normalized = slides
+          .filter(s => s && typeof s.src === 'string' && s.src.trim().length)
+          .map(s => ({
+            src: s.src,
+            durationMs: Number.isFinite(Number(s.durationMs)) && Number(s.durationMs) > 0 ? Number(s.durationMs) : 5000
+          }));
+
+        if (!normalized.length) { hint.textContent = 'No hay slides válidos.'; return; }
+
+        let currentIndex = 0;
+        let showingA = true;
+        let timerId = null;
+
+        slideA.src = normalized[0].src;
+        slideA.classList.add('is-active');
+        slideB.classList.remove('is-active');
+        hint.textContent = '';
+
+        function scheduleNext() {
+          const wait = normalized[currentIndex].durationMs;
+
+          timerId = window.setTimeout(() => {
+            currentIndex = (currentIndex + 1) % normalized.length;
+            const nextSlide = normalized[currentIndex];
+
+            const incoming = showingA ? slideB : slideA;
+            const outgoing = showingA ? slideA : slideB;
+
+            incoming.src = nextSlide.src;
+
+            requestAnimationFrame(() => {
+              incoming.classList.add('is-active');
+              outgoing.classList.remove('is-active');
+              showingA = !showingA;
+              scheduleNext();
+            });
+          }, wait);
+        }
+
+        window.addEventListener('beforeunload', () => { if (timerId) window.clearTimeout(timerId); });
+        scheduleNext();
+      }
+
+      (function boot() {
+        const hint = document.getElementById('hint');
+        const slides = Array.isArray(window.SLIDES) ? window.SLIDES : [];
+        if (!slides.length) { hint.textContent = 'No hay slides configurados.'; return; }
+        hint.textContent = 'Cargando imágenes…';
+
+        preloadSlidesSequential(slides)
+          .then(startSlideshow)
+          .catch(err => {
+            hint.textContent = (err && err.message) ? err.message : String(err);
+            console.error(err);
+          });
+      })();
+    </script>
+  </body>
+</html>`;
+      }
+
+      // ------------------
+      // Preview logic (uses local object URLs)
+      // ------------------
+      function stopPreview() {
+        if (previewTimerId) {
+          window.clearTimeout(previewTimerId);
+          previewTimerId = null;
+        }
+      }
+
+      function restartPreview() {
+        stopPreview();
+
+        if (!items.length) {
+          return;
+        }
+
+        // Initialize preview
+        previewIndex = 0;
+        previewShowingA = true;
+
+        pA.src = items[0].objectUrl;
+        pA.classList.add('is-active');
+        pB.classList.remove('is-active');
+
+        previewHint.textContent = `Mostrando ${items.length} imagen(es). Duración por imagen según tu configuración.`;
+
+        function scheduleNext() {
+          const wait = items[previewIndex].durationMs;
+
+          previewTimerId = window.setTimeout(() => {
+            previewIndex = (previewIndex + 1) % items.length;
+            const next = items[previewIndex];
+
+            const incoming = previewShowingA ? pB : pA;
+            const outgoing = previewShowingA ? pA : pB;
+
+            incoming.src = next.objectUrl;
+
+            requestAnimationFrame(() => {
+              incoming.classList.add('is-active');
+              outgoing.classList.remove('is-active');
+              previewShowingA = !previewShowingA;
+              scheduleNext();
+            });
+          }, wait);
+        }
+
+        scheduleNext();
+      }
+
+      // ------------------
+      // Events
+      // ------------------
+      fileInput.addEventListener('change', () => {
+        setError('');
+
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) return;
+
+        const remaining = MAX_FILES - items.length;
+        if (remaining <= 0) {
+          setError('Ya tienes 5 imágenes cargadas.');
+          fileInput.value = '';
+          return;
+        }
+
+        const take = files.slice(0, remaining);
+
+        take.forEach((file) => {
+          const safeName = sanitizeFilename(file.name) || ('image-' + Date.now() + '.jpg');
+          const objectUrl = URL.createObjectURL(file);
+          items.push({ file, name: safeName, objectUrl, durationMs: 5000 });
+        });
+
+        fileInput.value = '';
+        render();
+      });
+
+      clearBtn.addEventListener('click', () => {
+        items.forEach(it => URL.revokeObjectURL(it.objectUrl));
+        items = [];
+        setError('');
+        render();
+      });
+
+      dlAllBtn.addEventListener('click', () => {
+        if (!items.length) { setError('No hay imágenes para descargar.'); return; }
+        setError('');
+        items.forEach(it => downloadFile(it.file, it.name));
+      });
+
+      genBtn.addEventListener('click', () => {
+        if (!items.length) { setError('Carga al menos 1 imagen.'); return; }
+        setError('');
+
+        const slides = items.map(it => ({
+          src: './assets/' + it.name,
+          durationMs: it.durationMs
+        }));
+
+        const html = generateIndexHtml(slides);
+        downloadTextFile('index.html', html, 'text/html');
+
+        const instructions =
+`INSTRUCCIONES (Pulpa TV)
+1) Crea la carpeta /assets en la raíz del proyecto.
+2) Mueve las imágenes descargadas a /assets (mismos nombres).
+3) Reemplaza tu /index.html por el index.html generado.
+4) Deploy a Vercel.
+
+Rutas:
+- / (slideshow)
+- /admin (panel)
+
+Slides:
+${JSON.stringify(slides, null, 2)}
+`;
+
+        downloadTextFile('README.txt', instructions, 'text/plain');
+      });
+
+      // Cleanup
+      window.addEventListener('beforeunload', () => {
+        stopPreview();
+        items.forEach(it => URL.revokeObjectURL(it.objectUrl));
+      });
+
+      // Init
+      render();
+    </script>
+  </body>
+</html>
