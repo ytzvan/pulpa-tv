@@ -241,6 +241,11 @@
         slideEl.querySelector('.preview-media').src = src;
       }
 
+      function setPreviewItem(slideEl, item) {
+        setPreviewSource(slideEl, item ? item.objectUrl : '');
+        document.getElementById('preview').style.setProperty('--preview-bg-color', item && item.backgroundColor ? item.backgroundColor : '#000000');
+      }
+
       function setError(msg) {
         errorEl.textContent = msg || '';
       }
@@ -250,6 +255,63 @@
           .trim()
           .replace(/\s+/g, '-')
           .replace(/[^a-zA-Z0-9._-]/g, '');
+      }
+
+      function getAverageImageColor(img) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        const sampleSize = 24;
+
+        if (!context) {
+          return '#000000';
+        }
+
+        canvas.width = sampleSize;
+        canvas.height = sampleSize;
+        context.drawImage(img, 0, 0, sampleSize, sampleSize);
+
+        const { data } = context.getImageData(0, 0, sampleSize, sampleSize);
+        let red = 0;
+        let green = 0;
+        let blue = 0;
+        let count = 0;
+
+        for (let index = 0; index < data.length; index += 4) {
+          const alpha = data[index + 3];
+          if (alpha < 16) {
+            continue;
+          }
+
+          red += data[index];
+          green += data[index + 1];
+          blue += data[index + 2];
+          count += 1;
+        }
+
+        if (!count) {
+          return '#000000';
+        }
+
+        return `rgb(${Math.round(red / count)}, ${Math.round(green / count)}, ${Math.round(blue / count)})`;
+      }
+
+      function readImageColor(file) {
+        return new Promise((resolve) => {
+          const img = new Image();
+          const tempUrl = URL.createObjectURL(file);
+
+          img.onload = () => {
+            resolve(getAverageImageColor(img));
+            URL.revokeObjectURL(tempUrl);
+          };
+
+          img.onerror = () => {
+            resolve('#000000');
+            URL.revokeObjectURL(tempUrl);
+          };
+
+          img.src = tempUrl;
+        });
       }
 
       function updateCountBadge() {
@@ -266,8 +328,8 @@
           dlAllBtn.disabled = true;
           stopPreview();
           previewHint.textContent = 'Carga imágenes para ver el preview.';
-          setPreviewSource(pA, '');
-          setPreviewSource(pB, '');
+          setPreviewItem(pA, null);
+          setPreviewItem(pB, null);
           return;
         }
 
@@ -373,7 +435,7 @@
         width: 100vw; height: 100vh;
         position: fixed; inset: 0;
         overflow: hidden;
-        background: #000;
+        background: var(--slide-bg-color, #000);
       }
       .slide {
         position: absolute; inset: 0;
@@ -424,9 +486,41 @@
     </div>
 
     <script>
-      function setSlideSource(slideEl, src) {
-        slideEl.querySelector('.slide-bg').src = src;
-        slideEl.querySelector('.slide-media').src = src;
+      function getAverageImageColor(img) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        const sampleSize = 24;
+
+        if (!context) { return '#000000'; }
+
+        canvas.width = sampleSize;
+        canvas.height = sampleSize;
+        context.drawImage(img, 0, 0, sampleSize, sampleSize);
+
+        const data = context.getImageData(0, 0, sampleSize, sampleSize).data;
+        let red = 0;
+        let green = 0;
+        let blue = 0;
+        let count = 0;
+
+        for (let index = 0; index < data.length; index += 4) {
+          const alpha = data[index + 3];
+          if (alpha < 16) { continue; }
+          red += data[index];
+          green += data[index + 1];
+          blue += data[index + 2];
+          count += 1;
+        }
+
+        if (!count) { return '#000000'; }
+
+        return 'rgb(' + Math.round(red / count) + ', ' + Math.round(green / count) + ', ' + Math.round(blue / count) + ')';
+      }
+
+      function setSlideSource(slideEl, slide) {
+        slideEl.querySelector('.slide-bg').src = slide.src;
+        slideEl.querySelector('.slide-media').src = slide.src;
+        document.getElementById('stage').style.setProperty('--slide-bg-color', slide.backgroundColor || '#000000');
       }
 
       function preloadSlidesSequential(slides) {
@@ -435,7 +529,10 @@
           const img = new Image();
           img.decoding = 'sync';
           img.loading = 'eager';
-          img.onload = () => { loaded.push(slide); resolve(); };
+          img.onload = () => {
+            loaded.push(Object.assign({}, slide, { backgroundColor: getAverageImageColor(img) }));
+            resolve();
+          };
           img.onerror = () => reject(new Error('No se pudo cargar: ' + slide.src));
           img.src = slide.src;
         })), Promise.resolve()).then(() => loaded);
@@ -459,7 +556,7 @@
         let showingA = true;
         let timerId = null;
 
-        setSlideSource(slideA, normalized[0].src);
+        setSlideSource(slideA, normalized[0]);
         slideA.classList.add('is-active');
         slideB.classList.remove('is-active');
         hint.textContent = '';
@@ -474,7 +571,7 @@
             const incoming = showingA ? slideB : slideA;
             const outgoing = showingA ? slideA : slideB;
 
-            setSlideSource(incoming, nextSlide.src);
+            setSlideSource(incoming, nextSlide);
 
             requestAnimationFrame(() => {
               incoming.classList.add('is-active');
@@ -528,7 +625,7 @@
         previewIndex = 0;
         previewShowingA = true;
 
-        setPreviewSource(pA, items[0].objectUrl);
+        setPreviewItem(pA, items[0]);
         pA.classList.add('is-active');
         pB.classList.remove('is-active');
 
@@ -544,7 +641,7 @@
             const incoming = previewShowingA ? pB : pA;
             const outgoing = previewShowingA ? pA : pB;
 
-            setPreviewSource(incoming, next.objectUrl);
+            setPreviewItem(incoming, next);
 
             requestAnimationFrame(() => {
               incoming.classList.add('is-active');
@@ -576,14 +673,22 @@
 
         const take = files.slice(0, remaining);
 
-        take.forEach((file) => {
-          const safeName = sanitizeFilename(file.name) || ('image-' + Date.now() + '.jpg');
-          const objectUrl = URL.createObjectURL(file);
-          items.push({ file, name: safeName, objectUrl, durationMs: 5000 });
-        });
+        Promise.all(take.map((file) => readImageColor(file))).then((colors) => {
+          take.forEach((file, index) => {
+            const safeName = sanitizeFilename(file.name) || ('image-' + Date.now() + '.jpg');
+            const objectUrl = URL.createObjectURL(file);
+            items.push({
+              file,
+              name: safeName,
+              objectUrl,
+              durationMs: 5000,
+              backgroundColor: colors[index]
+            });
+          });
 
-        fileInput.value = '';
-        render();
+          fileInput.value = '';
+          render();
+        });
       });
 
       clearBtn.addEventListener('click', () => {
@@ -605,7 +710,8 @@
 
         const slides = items.map(it => ({
           src: './assets/' + it.name,
-          durationMs: it.durationMs
+          durationMs: it.durationMs,
+          backgroundColor: it.backgroundColor
         }));
 
         const html = generateIndexHtml(slides);

@@ -9,7 +9,7 @@
       html, body {
         height: 100%;
         margin: 0;
-        background: #000;
+        background: var(--slide-bg-color, #000);
       }
 
       .stage {
@@ -94,6 +94,44 @@
       // -----------------------------
       // ASYNC PRELOAD
       // -----------------------------
+      function getAverageImageColor(img) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        const sampleSize = 24;
+
+        if (!context) {
+          return '#000000';
+        }
+
+        canvas.width = sampleSize;
+        canvas.height = sampleSize;
+        context.drawImage(img, 0, 0, sampleSize, sampleSize);
+
+        const { data } = context.getImageData(0, 0, sampleSize, sampleSize);
+        let red = 0;
+        let green = 0;
+        let blue = 0;
+        let count = 0;
+
+        for (let index = 0; index < data.length; index += 4) {
+          const alpha = data[index + 3];
+          if (alpha < 16) {
+            continue;
+          }
+
+          red += data[index];
+          green += data[index + 1];
+          blue += data[index + 2];
+          count += 1;
+        }
+
+        if (!count) {
+          return '#000000';
+        }
+
+        return `rgb(${Math.round(red / count)}, ${Math.round(green / count)}, ${Math.round(blue / count)})`;
+      }
+
       function preloadSlidesSequential(slides) {
         const loaded = [];
 
@@ -104,7 +142,10 @@
               img.decoding = 'sync';
               img.loading = 'eager';
               img.onload = () => {
-                loaded.push(slide);
+                loaded.push({
+                  ...slide,
+                  backgroundColor: getAverageImageColor(img)
+                });
                 resolve();
               };
               img.onerror = () => reject(new Error('No se pudo cargar: ' + slide.src));
@@ -121,10 +162,12 @@
         const slideA = document.getElementById('slideA');
         const slideB = document.getElementById('slideB');
         const hint = document.getElementById('hint');
+        const stage = document.getElementById('stage');
 
-        function setSlideSource(slideEl, src) {
-          slideEl.querySelector('.slide-bg').src = src;
-          slideEl.querySelector('.slide-media').src = src;
+        function setSlideSource(slideEl, slide) {
+          slideEl.querySelector('.slide-bg').src = slide.src;
+          slideEl.querySelector('.slide-media').src = slide.src;
+          stage.style.setProperty('--slide-bg-color', slide.backgroundColor || '#000000');
         }
 
         const normalized = slides
@@ -145,7 +188,7 @@
         let showingA = true;
         let timerId = null;
 
-        setSlideSource(slideA, normalized[0].src);
+        setSlideSource(slideA, normalized[0]);
         slideA.classList.add('is-active');
 
         slideB.classList.remove('is-active');
@@ -161,7 +204,7 @@
             const incoming = showingA ? slideB : slideA;
             const outgoing = showingA ? slideA : slideB;
 
-            setSlideSource(incoming, nextSlide.src);
+            setSlideSource(incoming, nextSlide);
 
             requestAnimationFrame(() => {
               incoming.classList.add('is-active');
