@@ -24,16 +24,31 @@
       .slide {
         position: absolute;
         inset: 0;
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        object-position: center 30%;
         opacity: 0;
         transition: opacity 500ms ease;
       }
 
       .slide.is-active {
         opacity: 1;
+      }
+
+      .slide-bg,
+      .slide-media {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .slide-bg {
+        object-fit: cover;
+        filter: blur(20px) brightness(0.45);
+        transform: scale(1.08);
+      }
+
+      .slide-media {
+        object-fit: contain;
+        object-position: center;
       }
 
       .hint {
@@ -51,8 +66,14 @@
 
   <body>
     <div class="stage" id="stage">
-      <img class="slide is-active" id="slideA" alt="Slideshow image A" />
-      <img class="slide" id="slideB" alt="Slideshow image B" />
+      <div class="slide is-active" id="slideA">
+        <img class="slide-bg" alt="" aria-hidden="true" />
+        <img class="slide-media" alt="Slideshow image A" />
+      </div>
+      <div class="slide" id="slideB">
+        <img class="slide-bg" alt="" aria-hidden="true" />
+        <img class="slide-media" alt="Slideshow image B" />
+      </div>
       <div class="hint" id="hint"></div>
     </div>
 
@@ -101,6 +122,11 @@
         const slideB = document.getElementById('slideB');
         const hint = document.getElementById('hint');
 
+        function setSlideSource(slideEl, src) {
+          slideEl.querySelector('.slide-bg').src = src;
+          slideEl.querySelector('.slide-media').src = src;
+        }
+
         const normalized = slides
           .filter(s => s && typeof s.src === 'string' && s.src.trim().length)
           .map(s => ({
@@ -119,7 +145,7 @@
         let showingA = true;
         let timerId = null;
 
-        slideA.src = normalized[0].src;
+        setSlideSource(slideA, normalized[0].src);
         slideA.classList.add('is-active');
 
         slideB.classList.remove('is-active');
@@ -135,7 +161,7 @@
             const incoming = showingA ? slideB : slideA;
             const outgoing = showingA ? slideA : slideB;
 
-            incoming.src = nextSlide.src;
+            setSlideSource(incoming, nextSlide.src);
 
             requestAnimationFrame(() => {
               incoming.classList.add('is-active');
